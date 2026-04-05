@@ -155,9 +155,9 @@ class ASRInputMethod:
             return
         try:
             import pyperclip
-            import subprocess
+            import pyautogui
             pyperclip.copy(text)
-            subprocess.run(["ydotool", "key", "ctrl:down", "shift:down", "v:click", "ctrl:up", "shift:up"], check=True)
+            pyautogui.hotkey('ctrl', 'shift', 'v')
             print(f"Typed: {text}")
         except Exception as e:
             print(f"Error: {e}")
