@@ -51,13 +51,14 @@ class ASRInputMethod:
         self.audio_buffer = []  # Will hold recorded audio chunks
 
         self.running = True
+        self.recording_done_event = threading.Event()
+        self._processing = False
 
         signal.signal(signal.SIGINT, self._signal_handler)
 
     def _signal_handler(self, _signum, _frame):
         print("\n\nExiting...")
         self.running = False
-        sys.exit(0)
 
     def _create_wav_bytes(self, audio_data: np.ndarray) -> bytes:
         """Convert numpy audio array to WAV bytes."""
@@ -82,6 +83,7 @@ class ASRInputMethod:
         """Called when RightCtrl is released."""
         if event.name == RCTRL_KEY and self.is_recording:
             self.is_recording = False
+            self.recording_done_event.set()
             print("\nProcessing...", flush=True)
             # Transcription runs in main thread after recording stops
 
@@ -99,11 +101,16 @@ class ASRInputMethod:
                     self.recording_frames.append(frames.copy())
 
     def _start_recording_thread(self):
-        self.recording_thread = threading.Thread(
-            target=self._recording_thread_target,
-            daemon=True
-        )
-        self.recording_thread.start()
+        try:
+            self.recording_thread = threading.Thread(
+                target=self._recording_thread_target,
+                daemon=True
+            )
+            self.recording_thread.start()
+        except Exception as e:
+            print(f"Error: {e}")
+            self.is_recording = False
+            self.recording_done_event.set()  # Signal to allow continued operation
 
     def _get_recorded_audio(self) -> np.ndarray:
         """Get all recorded frames as a single numpy array."""
@@ -156,20 +163,24 @@ class ASRInputMethod:
         keyboard.on_press(self._on_rctrl_press)
         keyboard.on_release(self._on_rctrl_release)
 
-        # Status display loop
-        last_status_time = 0
+        # Main loop
         while self.running:
             time.sleep(0.05)  # Sleep to prevent busy loop
 
             # Check if recording just stopped - process transcription in main thread
-            # This is signaled by is_recording becoming False
-            if hasattr(self, '_processing') and self._processing:
-                continue
+            if self.recording_done_event.is_set():
+                self.recording_done_event.clear()
+                self.process_recording_and_type()
+                print("Listening... (press RCtrl to input)", flush=True)
 
             # Handle q to quit
             if keyboard.is_pressed('q'):
                 self.running = False
                 break
+
+        # Clean up recording thread
+        if hasattr(self, 'recording_thread') and self.recording_thread.is_alive():
+            self.recording_thread.join(timeout=1.0)
 
         keyboard.unhook_all()
 
