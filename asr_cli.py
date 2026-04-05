@@ -213,6 +213,18 @@ class ASRInputMethod:
                 print(f"[DEBUG] Recorded {len(audio_data)} samples")
 
             wav_bytes = self._create_wav_bytes(audio_data)
+
+            if self.debug:
+                import os
+                import datetime
+                log_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "log")
+                os.makedirs(log_dir, exist_ok=True)
+                timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+                wav_path = os.path.join(log_dir, f"asr_{timestamp}.wav")
+                with open(wav_path, "wb") as f:
+                    f.write(wav_bytes)
+                print(f"[DEBUG] Saved WAV to {wav_path}")
+
             text = self._transcribe(wav_bytes)
             if text:
                 self._type_text(text)
