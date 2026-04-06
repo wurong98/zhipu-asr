@@ -3,3 +3,4 @@ numpy
 pynput
 pyperclip
 pyautogui
+pyyaml

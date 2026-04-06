@@ -19,6 +19,7 @@ import sounddevice as sd
 from pynput import keyboard
 
 from zhipuai import ZhipuAI
+import yaml
 
 
 # Configuration
@@ -31,17 +32,31 @@ def parse_args():
     parser = argparse.ArgumentParser(description="ZhipuAI ASR Input Method")
     parser.add_argument("--api-key", "-k", type=str, help="ZhipuAI API key")
     parser.add_argument("--debug", "-d", action="store_true", help="Enable debug output")
+    parser.add_argument("--config", "-c", type=str, default="config.yaml", help="Config YAML path")
     return parser.parse_args()
 
 
+def _load_config(config_path: str) -> dict:
+    """Load hotwords and prompt from YAML config file."""
+    if not os.path.exists(config_path):
+        return {}
+    with open(config_path, "r", encoding="utf-8") as f:
+        return yaml.safe_load(f) or {}
+
+
 class ASRInputMethod:
-    def __init__(self, api_key: str, debug: bool = False):
+    def __init__(self, api_key: str, debug: bool = False, config_path: str = "config.yaml"):
         self.api_key = api_key
         if not self.api_key:
             raise ValueError("API key not provided. Use --api-key or set ZHIPUAI_API_KEY")
 
         self.client = ZhipuAI(api_key=self.api_key)
         self.debug = debug
+
+        # Load config
+        self.config = _load_config(config_path)
+        self.hotwords = self.config.get("hotwords", [])
+        self.prompt = self.config.get("prompt", "")
 
         self.is_recording = False
         self.recording_frames: list[np.ndarray] = []
@@ -127,11 +142,17 @@ class ASRInputMethod:
         if self.debug:
             print(f"[DEBUG] Request: wav_bytes={len(wav_bytes)} bytes")
 
-        response = self.client.audio.transcriptions.create(
-            file=("audio.wav", wav_bytes, "audio/wav"),
-            model="GLM-ASR-2512",
-            stream=True
-        )
+        kwargs = {
+            "file": ("audio.wav", wav_bytes, "audio/wav"),
+            "model": "GLM-ASR-2512",
+            "stream": True
+        }
+        if self.hotwords:
+            kwargs["hotwords"] = self.hotwords
+        if self.prompt:
+            kwargs["prompt"] = self.prompt
+
+        response = self.client.audio.transcriptions.create(**kwargs)
 
         full_text = ""
         for chunk in response:
@@ -238,7 +259,11 @@ def main():
     args = parse_args()
     api_key = args.api_key or os.environ.get("ZHIPUAI_API_KEY")
     try:
-        im = ASRInputMethod(api_key, debug=args.debug)
+        im = ASRInputMethod(api_key, debug=args.debug, config_path=args.config)
+        if im.hotwords:
+            print(f"Hotwords loaded: {im.hotwords}")
+        if im.prompt:
+            print(f"Prompt loaded: {im.prompt}")
         im.run()
     except ValueError as e:
         print(f"Error: {e}")
