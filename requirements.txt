@@ -1,6 +1,8 @@
+PySide6
 sounddevice
 numpy
-pynput
-pyperclip
+keyboard
 pyautogui
-pyyaml
+pyperclip
+zhipuai
+PyYAML

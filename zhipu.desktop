@@ -1,0 +1,11 @@
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=Zhipu 语音输入
+Comment=Zhipu AI 语音输入法托盘应用
+Exec=python3 /home/wurong/workspace/zhipu/zhipu_tray.py
+Icon=/home/wurong/workspace/zhipu/assets/icons/mic_idle.svg
+Terminal=false
+Categories=Utility;VoiceInput;
+StartupNotify=false
+X-GNOME-Autostart-enabled=false
