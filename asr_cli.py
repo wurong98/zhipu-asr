@@ -6,6 +6,7 @@ Usage: python asr_cli.py --api-key YOUR_KEY
 """
 
 import io
+import json
 import signal
 import sys
 import wave
@@ -147,8 +148,13 @@ class ASRInputMethod:
             "model": "GLM-ASR-2512",
             "stream": True
         }
+        extra_body = {}
         if self.prompt:
-            kwargs["prompt"] = self.prompt
+            extra_body["prompt"] = self.prompt
+        if self.hotwords:
+            extra_body["hotwords"] = json.dumps(self.hotwords)
+        if extra_body:
+            kwargs["extra_body"] = extra_body
 
         response = self.client.audio.transcriptions.create(**kwargs)
 

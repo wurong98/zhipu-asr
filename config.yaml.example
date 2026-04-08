@@ -1,8 +1,8 @@
 # Zhipu ASR Config Example
 # Copy to config.yaml and customize
 
-# hotwords:  # SDK暂不支持
-#   - Python
-#   - Linux
+hotwords:
+  - Python
+  - Linux
 
 prompt: "用户正在讨论技术问题，包含代码和命令行操作"
