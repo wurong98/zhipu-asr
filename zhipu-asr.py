@@ -93,12 +93,12 @@ class ZhipuTray:
 
         # 优先使用命令行参数，其次使用保存的配置
         final_api_key = api_key or self._saved_config.get("api_key", "")
-        if not final_api_key:
-            print("Error: API key not provided. Use --api-key or set in UI")
-            sys.exit(1)
 
         # 创建主窗口
         self.main_window = MainWindow(on_settings_change=self._on_settings_change)
+
+        if not final_api_key:
+            self.main_window.append_log("[提示] 请在上方填写 API Key 并点击保存")
 
         # 加载设置到 UI
         self.main_window.load_settings(
@@ -116,7 +116,7 @@ class ZhipuTray:
 
         # ASR 引擎
         self.engine = ASREngine(
-            api_key=final_api_key,
+            api_key=final_api_key or "",
             state_callback=None,
             result_callback=self._on_asr_result,
         )
