@@ -23,6 +23,7 @@ from pynput.keyboard import Controller
 SAMPLE_RATE = 16000
 CHANNELS = 1
 DTYPE = 'int16'
+MAX_RECORDING_DURATION = 30  # 最大录音时长（秒）
 
 
 class ASRState(Enum):
@@ -135,6 +136,7 @@ class ASREngine:
         if key == keyboard.Key.ctrl_r and not self._is_recording:
             self._is_recording = True
             self._recording_frames = []
+            self._recording_start_time = time.time()
             self.set_state(ASRState.RECORDING)
             self._start_recording_thread()
 
@@ -148,6 +150,14 @@ class ASREngine:
         stream = sd.InputStream(samplerate=SAMPLE_RATE, channels=CHANNELS, dtype=DTYPE)
         with stream:
             while self._is_recording and self._running:
+                # 检查录音时长
+                elapsed = time.time() - self._recording_start_time
+                if elapsed >= MAX_RECORDING_DURATION:
+                    print(f"[警告] 录音已达 {MAX_RECORDING_DURATION}s 上限，自动停止")
+                    self._is_recording = False
+                    self.set_state(ASRState.PROCESSING)
+                    break
+                
                 frames, _ = stream.read(int(SAMPLE_RATE * 0.1))
                 with self._recording_lock:
                     self._recording_frames.append(frames.copy())
@@ -195,12 +205,20 @@ class ASREngine:
 
     def _type_text(self, text: str):
         if not text:
+            print("[警告] 识别结果为空")
             return
         try:
             keyboard = Controller()
             keyboard.type(text)
         except Exception as e:
-            print(f"Type error: {e}")
+            # fallback: 用剪贴板
+            print(f"[Type失败] {e}，使用剪贴板fallback")
+            try:
+                import pyperclip
+                pyperclip.copy(text)
+                print(f"[剪贴板] 已复制: {text}")
+            except Exception as e2:
+                print(f"[错误] 剪贴板也失败: {e2}")
 
     def start(self):
         """启动引擎，开始监听"""
