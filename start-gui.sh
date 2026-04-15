@@ -2,6 +2,9 @@
 # 后台启动（不占用终端）
 cd "$(dirname "$0")"
 
+# ALSA PulseAudio 插件路径（让 sounddevice 走 PulseAudio，使用系统默认麦克风）
+export ALSA_PLUGIN_DIR=/usr/lib/x86_64-linux-gnu/alsa-lib
+
 LOG_FILE="$HOME/.local/share/zhipu-asr/zhipu-asr.log"
 mkdir -p "$(dirname "$LOG_FILE")"
 
