@@ -58,6 +58,8 @@ def parse_args():
     parser.add_argument("--api-key", "-k", type=str, help="ZhipuAI API key")
     parser.add_argument("--console", action="store_true", default=False,
                         help="显示控制台输出（默认无控制台）")
+    parser.add_argument("--debug", action="store_true", default=False,
+                        help="启用调试输出")
     return parser.parse_args()
 
 
@@ -237,7 +239,7 @@ def main():
     setup_console(args.console)
 
     api_key = args.api_key or os.environ.get("ZHIPUAI_API_KEY")
-    tray = ZhipuTray(api_key=api_key, debug=args.console)
+    tray = ZhipuTray(api_key=api_key, debug=args.debug or args.console)
     tray.run()
 
 

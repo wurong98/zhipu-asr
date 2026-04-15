@@ -74,6 +74,22 @@ class ASREngine:
 
         signal.signal(signal.SIGINT, self._signal_handler)
 
+    # 终端窗口检测逻辑，可被单元测试
+    TERMINAL_INDICATORS = ['terminal', 'konsole', 'xterm', 'gnome-terminal',
+                          'alacritty', 'tilix', 'terminator', 'kitty', 'putty',
+                          'rxvt', 'urxvt', 'xfce4-terminal', 'mate-terminal']
+
+    def _is_terminal_window(self, window_name: str, window_class: str) -> bool:
+        """检测窗口是否是终端（支持前缀匹配）"""
+        for ind in self.TERMINAL_INDICATORS:
+            # 支持子串匹配和前缀匹配
+            if ind in window_name or ind in window_class:
+                return True
+            # 处理 gnome-terminal-server 这类带后缀的情况
+            if window_name.startswith(ind) or window_class.startswith(ind):
+                return True
+        return False
+
     def _load_config(self, config_path: str) -> dict:
         import os
         if not os.path.exists(config_path):
@@ -245,18 +261,51 @@ class ASREngine:
             # 释放残留修饰符
             subprocess.run(['xdotool', 'keyup', 'ctrl', 'shift', 'alt'], check=False)
 
-            # 使用 PySide6 剪贴板 + Ctrl+V 整段粘贴
-            # 部分应用(终端)使用 Ctrl+Shift+V
             from PySide6.QtWidgets import QApplication
             from PySide6.QtGui import QGuiApplication
             app = QApplication.instance()
             if app is None:
                 app = QApplication([])
-            QGuiApplication.clipboard().setText(text)
+            clipboard = QGuiApplication.clipboard()
+
+            # 自动检测窗口类型，选择正确的粘贴快捷键
+            paste_key = "ctrl+v"
+            if self._target_window:
+                try:
+                    # 获取窗口名称和类名
+                    name_result = subprocess.run(
+                        ['xdotool', 'getwindowname', str(self._target_window)],
+                        capture_output=True, text=True, check=False
+                    )
+                    window_name = name_result.stdout.lower().strip() if name_result.returncode == 0 else ""
+
+                    class_result = subprocess.run(
+                        ['xprop', '-id', str(self._target_window), 'WM_CLASS'],
+                        capture_output=True, text=True, check=False
+                    )
+                    # xprop 输出格式: WM_CLASS(STRING) = "value"
+                    raw_class = class_result.stdout.strip() if class_result.returncode == 0 else ""
+                    # 提取引号内的值
+                    import re
+                    match = re.search(r'"([^"]+)"', raw_class)
+                    window_class = match.group(1).lower() if match else raw_class.lower()
+
+                    # 调试输出
+                    if self.debug:
+                        import sys
+                        print(f"[DEBUG] window_name: '{window_name}', window_class: '{window_class}', raw: '{raw_class}'", flush=True)
+                        print(f"[DEBUG] is_terminal: {self._is_terminal_window(window_name, window_class)}", flush=True)
+
+                    is_terminal = self._is_terminal_window(window_name, window_class)
+
+                    if is_terminal:
+                        paste_key = "ctrl+shift+v"
+                except Exception as e:
+                    print(f"[DEBUG] Exception: {e}")
+
+            clipboard.setText(text)
             time.sleep(0.05)
-            subprocess.run(["xdotool", "key", "ctrl+v"], check=True)
-            time.sleep(0.05)
-            subprocess.run(["xdotool", "key", "ctrl+shift+v"], check=True)
+            subprocess.run(["xdotool", "key", paste_key], check=True)
         except Exception as e:
             print(f"Type error: {e}")
 
