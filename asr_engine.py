@@ -5,10 +5,11 @@ ASR Engine - 封装 asr_cli.py 的核心逻辑
 
 import io
 import json
-import signal
 import wave
-import threading
 import time
+import yaml
+import signal
+import threading
 from enum import Enum
 from typing import Callable, Optional
 
@@ -17,8 +18,7 @@ import sounddevice as sd
 from pynput import keyboard
 
 from zhipuai import ZhipuAI
-import yaml
-
+from pynput.keyboard import Controller
 
 SAMPLE_RATE = 16000
 CHANNELS = 1
@@ -197,10 +197,8 @@ class ASREngine:
         if not text:
             return
         try:
-            import pyperclip
-            import pyautogui
-            pyperclip.copy(text)
-            pyautogui.hotkey('ctrl', 'shift', 'v')
+            keyboard = Controller()
+            keyboard.type(text)
         except Exception as e:
             print(f"Type error: {e}")
 
