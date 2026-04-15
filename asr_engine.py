@@ -231,6 +231,13 @@ class ASREngine:
             kb.release(keyboard.Key.shift)
             kb.release(keyboard.Key.ctrl)
             
+            # 模拟 Ctrl+V 粘贴
+            time.sleep(0.05)
+            kb.press(keyboard.Key.ctrl)
+            kb.press('v')
+            kb.release('v')
+            kb.release(keyboard.Key.ctrl)
+
             # 等待粘贴完成后恢复剪贴板
             time.sleep(0.1)
             pyperclip.copy(old_clipboard)
