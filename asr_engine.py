@@ -12,6 +12,7 @@ import signal
 import threading
 from enum import Enum
 from typing import Callable, Optional
+import pyperclip
 
 import numpy as np
 import sounddevice as sd
@@ -214,17 +215,27 @@ class ASREngine:
             return
         
         try:
-            keyboard = Controller()
-            keyboard.type(text)
+            # 保存原剪贴板内容
+            old_clipboard = pyperclip.paste()
+            
+            # 复制识别结果
+            pyperclip.copy(text)
+            print(f"[识别] {text}")
+            
+            # 模拟 Ctrl+Shift+V 粘贴
+            kb = Controller()
+            kb.press(keyboard.Key.ctrl)
+            kb.press(keyboard.Key.shift)
+            kb.press('v')
+            kb.release('v')
+            kb.release(keyboard.Key.shift)
+            kb.release(keyboard.Key.ctrl)
+            
+            # 等待粘贴完成后恢复剪贴板
+            time.sleep(0.1)
+            pyperclip.copy(old_clipboard)
         except Exception as e:
-            # fallback: 用剪贴板
-            print(f"[Type失败] {e}，使用剪贴板fallback")
-            try:
-                import pyperclip
-                pyperclip.copy(text)
-                print(f"[剪贴板] 已复制: {text}")
-            except Exception as e2:
-                print(f"[错误] 剪贴板也失败: {e2}")
+            print(f"[错误] 输入失败: {e}")
 
     def start(self):
         """启动引擎，开始监听"""
