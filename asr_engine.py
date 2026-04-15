@@ -197,10 +197,11 @@ class ASREngine:
         if not text:
             return
         try:
-            import pyperclip
-            import pyautogui
-            pyperclip.copy(text)
-            pyautogui.hotkey('ctrl', 'shift', 'v')
+            import subprocess
+            from PySide6.QtWidgets import QApplication
+            clipboard = QApplication.clipboard()
+            clipboard.setText(text)
+            subprocess.run(['xdotool', 'key', 'ctrl+shift+v'], check=True)
         except Exception as e:
             print(f"Type error: {e}")
 
