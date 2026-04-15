@@ -52,10 +52,8 @@ class ASREngine:
 
         # 优先使用传入的 api_key，其次使用保存的
         self.api_key = api_key or saved_config.get("api_key", "")
-        if not self.api_key:
-            raise ValueError("API key not provided")
 
-        self.client = ZhipuAI(api_key=self.api_key)
+        self.client = ZhipuAI(api_key=self.api_key) if self.api_key else None
         self.debug = debug
         self.hotwords = saved_config.get("hotwords", [])
         self.prompt = saved_config.get("prompt", "")
@@ -165,6 +163,8 @@ class ASREngine:
             return np.concatenate(self._recording_frames)
 
     def _transcribe(self, wav_bytes: bytes) -> str:
+        if not self.client:
+            raise ValueError("API key 未设置，请在设置界面填写 API Key")
         kwargs = {
             "file": ("audio.wav", wav_bytes, "audio/wav"),
             "model": "GLM-ASR-2512",
