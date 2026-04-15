@@ -213,12 +213,10 @@ class ASREngine:
             from PySide6.QtWidgets import QApplication
             clipboard = QApplication.clipboard()
             clipboard.setText(text)
-            # 等待焦点稳定后再粘贴
+            # 先释放可能残留的 Ctrl 修饰符，再等待焦点稳定
+            subprocess.run(['xdotool', 'keyup', 'ctrl'], check=False)
             time.sleep(0.2)
-            # 粘贴两次确保成功（终端有时需要）
-            for _ in range(2):
-                subprocess.run(['xdotool', 'key', '--delay', '100', 'ctrl+shift+v'], check=True)
-                time.sleep(0.1)
+            subprocess.run(['xdotool', 'key', 'ctrl+shift+v'], check=True)
         except Exception as e:
             print(f"Type error: {e}")
 
