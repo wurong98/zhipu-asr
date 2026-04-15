@@ -74,7 +74,8 @@ def setup_console(console_mode: bool):
 
 
 class ZhipuTray:
-    def __init__(self, api_key: str = None):
+    def __init__(self, api_key: str = None, debug: bool = False):
+        self.debug = debug
         self.app = QApplication(sys.argv)
         self.app.setQuitOnLastWindowClosed(False)
 
@@ -117,6 +118,7 @@ class ZhipuTray:
         # ASR 引擎
         self.engine = ASREngine(
             api_key=final_api_key or "",
+            debug=self.debug,
             state_callback=None,
             result_callback=self._on_asr_result,
         )
@@ -235,7 +237,7 @@ def main():
     setup_console(args.console)
 
     api_key = args.api_key or os.environ.get("ZHIPUAI_API_KEY")
-    tray = ZhipuTray(api_key=api_key)
+    tray = ZhipuTray(api_key=api_key, debug=args.console)
     tray.run()
 
 

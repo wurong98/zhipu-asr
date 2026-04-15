@@ -129,6 +129,18 @@ class ASREngine:
         buffer.seek(0)
         return buffer.read()
 
+    def _save_debug_wav(self, wav_bytes: bytes):
+        """debug 模式下保存 WAV 文件"""
+        import os
+        from datetime import datetime
+        log_dir = os.path.expanduser("~/.local/share/zhipu-asr/debug")
+        os.makedirs(log_dir, exist_ok=True)
+        ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+        path = os.path.join(log_dir, f"{ts}.wav")
+        with open(path, "wb") as f:
+            f.write(wav_bytes)
+        print(f"[debug] WAV saved: {path} ({len(wav_bytes)} bytes)")
+
     def _on_rctrl_press(self, key):
         if key == keyboard.Key.ctrl_r and not self._is_recording:
             self._is_recording = True
@@ -230,6 +242,10 @@ class ASREngine:
             return
 
         wav_bytes = self._create_wav_bytes(audio_data)
+
+        if self.debug:
+            self._save_debug_wav(wav_bytes)
+
         text = self._transcribe(wav_bytes)
 
         if text:
