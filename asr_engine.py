@@ -6,6 +6,7 @@ ASR Engine - 封装 asr_cli.py 的核心逻辑
 import io
 import json
 import signal
+import sys
 import subprocess
 import wave
 import threading
@@ -79,15 +80,28 @@ class ASREngine:
                           'alacritty', 'tilix', 'terminator', 'kitty', 'putty',
                           'rxvt', 'urxvt', 'xfce4-terminal', 'mate-terminal']
 
+    # VSCode 等编辑器内嵌终端的检测
+    TERMINAL_IN_WINDOW_NAME = ['terminal', 'bash', 'zsh', 'powershell', 'cmd', 'python']
+
     def _is_terminal_window(self, window_name: str, window_class: str) -> bool:
         """检测窗口是否是终端（支持前缀匹配）"""
+        window_name_lower = window_name.lower()
+        window_class_lower = window_class.lower()
+
         for ind in self.TERMINAL_INDICATORS:
             # 支持子串匹配和前缀匹配
-            if ind in window_name or ind in window_class:
+            if ind in window_class_lower or ind in window_name_lower:
                 return True
             # 处理 gnome-terminal-server 这类带后缀的情况
-            if window_name.startswith(ind) or window_class.startswith(ind):
+            if window_name_lower.startswith(ind) or window_class_lower.startswith(ind):
                 return True
+
+        # VSCode/编辑器内嵌终端：窗口类是 code/edit 等，但窗口名包含终端关键词
+        if 'code' in window_class_lower or 'code' in window_name_lower:
+            for term in self.TERMINAL_IN_WINDOW_NAME:
+                if term in window_name_lower:
+                    return True
+
         return False
 
     def _load_config(self, config_path: str) -> dict:
@@ -175,6 +189,7 @@ class ASREngine:
         if key == keyboard.Key.ctrl_r and not self._is_recording:
             # 记录目标窗口（粘贴时需要切回）
             self._target_window = self._get_target_window()
+            print(f"[DEBUG] Recording started, target_window: {self._target_window}", file=sys.__stdout__, flush=True)
             self._is_recording = True
             self._recording_frames = []
             self._recording_start_time = time.time()  # 记录开始时间
@@ -250,29 +265,14 @@ class ASREngine:
         if not text:
             return
         try:
-            # 切回录音前的目标窗口
-            if self._target_window:
-                subprocess.run(
-                    ['xdotool', 'windowactivate', '--sync', str(self._target_window)],
-                    check=False
-                )
-                time.sleep(0.1)
+            import re
+            def debug_log(msg):
+                print(msg, file=sys.__stdout__, flush=True)
 
-            # 释放残留修饰符
-            subprocess.run(['xdotool', 'keyup', 'ctrl', 'shift', 'alt'], check=False)
-
-            from PySide6.QtWidgets import QApplication
-            from PySide6.QtGui import QGuiApplication
-            app = QApplication.instance()
-            if app is None:
-                app = QApplication([])
-            clipboard = QGuiApplication.clipboard()
-
-            # 自动检测窗口类型，选择正确的粘贴快捷键
-            paste_key = "ctrl+v"
+            # 自动检测窗口类型，选择正确的粘贴方式
+            use_typeInstead = False
             if self._target_window:
                 try:
-                    # 获取窗口名称和类名
                     name_result = subprocess.run(
                         ['xdotool', 'getwindowname', str(self._target_window)],
                         capture_output=True, text=True, check=False
@@ -283,29 +283,74 @@ class ASREngine:
                         ['xprop', '-id', str(self._target_window), 'WM_CLASS'],
                         capture_output=True, text=True, check=False
                     )
-                    # xprop 输出格式: WM_CLASS(STRING) = "value"
                     raw_class = class_result.stdout.strip() if class_result.returncode == 0 else ""
-                    # 提取引号内的值
-                    import re
                     match = re.search(r'"([^"]+)"', raw_class)
                     window_class = match.group(1).lower() if match else raw_class.lower()
 
-                    # 调试输出
-                    if self.debug:
-                        import sys
-                        print(f"[DEBUG] window_name: '{window_name}', window_class: '{window_class}', raw: '{raw_class}'", flush=True)
-                        print(f"[DEBUG] is_terminal: {self._is_terminal_window(window_name, window_class)}", flush=True)
-
                     is_terminal = self._is_terminal_window(window_name, window_class)
 
-                    if is_terminal:
-                        paste_key = "ctrl+shift+v"
-                except Exception as e:
-                    print(f"[DEBUG] Exception: {e}")
+                    # 终端和VSCode都使用 xdotool type 直接输入文本（更可靠）
+                    if is_terminal or 'code' in window_class:
+                        use_typeInstead = True
 
-            clipboard.setText(text)
-            time.sleep(0.05)
-            subprocess.run(["xdotool", "key", paste_key], check=True)
+                    debug_log(f"[DEBUG] window_name: '{window_name}'")
+                    debug_log(f"[DEBUG] window_class: '{window_class}', raw: '{raw_class}'")
+                    debug_log(f"[DEBUG] is_terminal: {is_terminal}")
+                    debug_log(f"[DEBUG] use_typeInstead: {use_typeInstead}")
+                except Exception as e:
+                    debug_log(f"[DEBUG] Exception: {e}")
+
+            # 切回目标窗口并等待焦点稳定
+            if self._target_window:
+                subprocess.run(
+                    ['xdotool', 'windowfocus', str(self._target_window)],
+                    check=False
+                )
+                time.sleep(0.15)
+
+            # 释放残留修饰符
+            subprocess.run(['xdotool', 'keyup', 'ctrl', 'shift', 'alt'], check=False)
+
+            if use_typeInstead:
+                # GNOME Terminal: 使用 xdotool type 直接输入文本（避免 Ctrl+Shift+V 问题）
+                subprocess.run(
+                    ['xdotool', 'type', '--clearmodifiers', '--', text],
+                    check=False
+                )
+            else:
+                # 其他程序: 使用剪贴板粘贴
+                from PySide6.QtWidgets import QApplication
+                from PySide6.QtGui import QGuiApplication
+                app = QApplication.instance()
+                if app is None:
+                    app = QApplication([])
+                clipboard = QGuiApplication.clipboard()
+
+                paste_key = "ctrl+v"
+                if self._target_window:
+                    try:
+                        name_result = subprocess.run(
+                            ['xdotool', 'getwindowname', str(self._target_window)],
+                            capture_output=True, text=True, check=False
+                        )
+                        window_name = name_result.stdout.lower().strip() if name_result.returncode == 0 else ""
+
+                        class_result = subprocess.run(
+                            ['xprop', '-id', str(self._target_window), 'WM_CLASS'],
+                            capture_output=True, text=True, check=False
+                        )
+                        raw_class = class_result.stdout.strip() if class_result.returncode == 0 else ""
+                        match = re.search(r'"([^"]+)"', raw_class)
+                        window_class = match.group(1).lower() if match else raw_class.lower()
+
+                        if self._is_terminal_window(window_name, window_class):
+                            paste_key = "ctrl+shift+v"
+                    except:
+                        pass
+
+                clipboard.setText(text)
+                time.sleep(0.05)
+                subprocess.run(["xdotool", "key", paste_key], check=True)
         except Exception as e:
             print(f"Type error: {e}")
 

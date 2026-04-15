@@ -32,9 +32,10 @@ if command -v conda &>/dev/null; then
     fi
 
     if $DEBUG_MODE; then
-        conda run -n zhipu-asr python zhipu-asr.py $ARGS
+        # 调试模式：使用 unbuffered 输出
+        PYTHONUNBUFFERED=1 conda run -n zhipu-asr python -u zhipu-asr.py $ARGS
     else
-        conda run -n zhipu-asr python zhipu-asr.py $ARGS > "$LOG_FILE" 2>&1 &
+        conda run -n zhipu-asr python -u zhipu-asr.py $ARGS > "$LOG_FILE" 2>&1 &
         PID=$!
         # 等待一秒，检查进程是否存活
         sleep 1
@@ -49,7 +50,7 @@ else
     if $DEBUG_MODE; then
         python zhipu-asr.py $ARGS
     else
-        python zhipu-asr.py $ARGS > "$LOG_FILE" 2>&1 &
+        python -u zhipu-asr.py $ARGS > "$LOG_FILE" 2>&1 &
         PID=$!
         # 等待一秒，检查进程是否存活
         sleep 1

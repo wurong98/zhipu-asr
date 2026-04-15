@@ -63,17 +63,6 @@ def parse_args():
     return parser.parse_args()
 
 
-def setup_console(console_mode: bool):
-    """配置控制台输出模式"""
-    if not console_mode:
-        # 静默模式：重定向到 devnull
-        sys.stdout = open(os.devnull, 'w')
-        sys.stderr = open(os.devnull, 'w')
-    else:
-        # 恢复标准输出
-        sys.stdout = sys.__stdout__
-        sys.stderr = sys.__stderr__
-
 
 class ZhipuTray:
     def __init__(self, api_key: str = None, debug: bool = False):
@@ -234,9 +223,6 @@ class ZhipuTray:
 
 def main():
     args = parse_args()
-
-    # 控制台模式设置（默认无控制台）
-    setup_console(args.console)
 
     api_key = args.api_key or os.environ.get("ZHIPUAI_API_KEY")
     tray = ZhipuTray(api_key=api_key, debug=args.debug or args.console)
