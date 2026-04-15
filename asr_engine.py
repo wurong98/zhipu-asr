@@ -207,6 +207,12 @@ class ASREngine:
         if not text:
             print("[警告] 识别结果为空")
             return
+        
+        # 过滤识别失败的结果（单个 # 号）
+        if text.strip() == "#":
+            print("[警告] 识别失败（结果为单个 # 号），已忽略")
+            return
+        
         try:
             keyboard = Controller()
             keyboard.type(text)
