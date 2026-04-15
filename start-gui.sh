@@ -2,7 +2,7 @@
 # 后台启动（不占用终端）
 cd "$(dirname "$0")"
 
-# ALSA PulseAudio 插件路径（让 sounddevice 走 PulseAudio，使用系统默认麦克风）
+# ALSA PulseAudio 插件路径（让 sounddevice 走 PulseAudio，使用系统默认麦克风并显示录音指示）
 export ALSA_PLUGIN_DIR=/usr/lib/x86_64-linux-gnu/alsa-lib
 
 LOG_FILE="$HOME/.local/share/zhipu-asr/zhipu-asr.log"
@@ -10,8 +10,8 @@ mkdir -p "$(dirname "$LOG_FILE")"
 
 # 优先使用 conda zhipu-asr 环境
 if command -v conda &>/dev/null; then
-    PYTHON=$(conda run -n zhipu-asr which python 2>/dev/null)
-    if [[ -z "$PYTHON" ]]; then
+    # 用 conda run 直接执行，确保环境正确加载
+    if ! conda run -n zhipu-asr python -c "import sys; sys.exit(0)" 2>/dev/null; then
         echo "❌ 未找到 conda 环境 zhipu-asr，请先安装："
         echo ""
         echo "    conda create -n zhipu-asr python=3.10"
@@ -20,12 +20,12 @@ if command -v conda &>/dev/null; then
         echo ""
         exit 1
     fi
+    conda run -n zhipu-asr python zhipu-asr.py "$@" > "$LOG_FILE" 2>&1 &
+    PID=$!
 else
-    PYTHON=python
+    python zhipu-asr.py "$@" > "$LOG_FILE" 2>&1 &
+    PID=$!
 fi
-
-nohup "$PYTHON" zhipu-asr.py "$@" > "$LOG_FILE" 2>&1 &
-PID=$!
 
 # 等待一秒，检查进程是否存活
 sleep 1
