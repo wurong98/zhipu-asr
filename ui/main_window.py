@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 """主窗口 UI"""
 
-from PySide6.QtWidgets import (
+from PySide2.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QLabel, QLineEdit, QPushButton, QTextEdit, QCheckBox
 )
-from PySide6.QtCore import Qt
+from PySide2.QtCore import Qt
 
 from .styles import WINDOW_STYLE
 

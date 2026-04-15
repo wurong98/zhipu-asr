@@ -9,9 +9,9 @@ import sys
 import argparse
 from pathlib import Path
 
-from PySide6.QtWidgets import QApplication, QSystemTrayIcon, QMenu
-from PySide6.QtGui import QIcon, QAction, QPainter, QPixmap, QColor
-from PySide6.QtCore import QTimer
+from PySide2.QtWidgets import QApplication, QSystemTrayIcon, QMenu, QAction
+from PySide2.QtGui import QIcon, QPainter, QPixmap, QColor
+from PySide2.QtCore import QTimer
 
 # PyInstaller 兼容：获取资源目录
 def get_base_dir():
@@ -41,7 +41,7 @@ class AnimatedIcon(QIcon):
         size = self.recording_pixmap.size()
         pixmap = self.recording_pixmap.copy()
         painter = QPainter(pixmap)
-        painter.setCompositionMode(QPainter.CompositionMode.CompositionMode_Plus)
+        painter.setCompositionMode(QPainter.CompositionMode_Plus)
         alpha = int(128 * (1.0 - progress))
         painter.fillRect(pixmap.rect(), QColor(255, 0, 0, alpha))
         painter.end()
@@ -154,7 +154,7 @@ class ZhipuTray:
         self.tray.setContextMenu(menu)
 
     def _on_tray_activated(self, reason):
-        if reason == QSystemTrayIcon.ActivationReason.Trigger:
+        if reason == QSystemTrayIcon.Trigger:
             self.main_window.show()
 
     def _poll_engine_state(self):
@@ -221,7 +221,7 @@ class ZhipuTray:
     def run(self):
         self.engine.start()
         self.tray.show()
-        sys.exit(self.app.exec())
+        sys.exit(self.app.exec_())
 
     def quit(self):
         self.engine.stop()
