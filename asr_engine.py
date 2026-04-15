@@ -246,10 +246,17 @@ class ASREngine:
             subprocess.run(['xdotool', 'keyup', 'ctrl', 'shift', 'alt'], check=False)
 
             # 使用 PySide6 剪贴板 + Ctrl+V 整段粘贴
+            # 部分应用(终端)使用 Ctrl+Shift+V
+            from PySide6.QtWidgets import QApplication
             from PySide6.QtGui import QGuiApplication
+            app = QApplication.instance()
+            if app is None:
+                app = QApplication([])
             QGuiApplication.clipboard().setText(text)
             time.sleep(0.05)
             subprocess.run(["xdotool", "key", "ctrl+v"], check=True)
+            time.sleep(0.05)
+            subprocess.run(["xdotool", "key", "ctrl+shift+v"], check=True)
         except Exception as e:
             print(f"Type error: {e}")
 
