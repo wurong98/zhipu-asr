@@ -6,6 +6,7 @@ ASR Engine - 封装 asr_cli.py 的核心逻辑
 import io
 import json
 import signal
+import subprocess
 import wave
 import threading
 import time
@@ -68,6 +69,7 @@ class ASREngine:
         self._running = False
         self._recording_done_event = None
         self._listener = None
+        self._target_window = None  # 录音前记录目标窗口
 
         signal.signal(signal.SIGINT, self._signal_handler)
 
@@ -141,8 +143,21 @@ class ASREngine:
             f.write(wav_bytes)
         print(f"[debug] WAV saved: {path} ({len(wav_bytes)} bytes)")
 
+    def _get_target_window(self) -> Optional[int]:
+        """获取当前活动窗口 ID"""
+        try:
+            result = subprocess.run(
+                ['xdotool', 'getactivewindow'],
+                capture_output=True, text=True, check=True
+            )
+            return int(result.stdout.strip())
+        except Exception:
+            return None
+
     def _on_rctrl_press(self, key):
         if key == keyboard.Key.ctrl_r and not self._is_recording:
+            # 记录目标窗口（粘贴时需要切回）
+            self._target_window = self._get_target_window()
             self._is_recording = True
             self._recording_frames = []
             self.set_state(ASRState.RECORDING)
@@ -209,13 +224,21 @@ class ASREngine:
         if not text:
             return
         try:
-            import subprocess
             from PySide6.QtWidgets import QApplication
             clipboard = QApplication.clipboard()
             clipboard.setText(text)
-            # 先释放可能残留的 Ctrl 修饰符，再等待焦点稳定
-            subprocess.run(['xdotool', 'keyup', 'ctrl'], check=False)
-            time.sleep(0.2)
+
+            # 释放残留修饰符
+            subprocess.run(['xdotool', 'keyup', 'ctrl', 'shift'], check=False)
+
+            # 切回录音前的目标窗口
+            if self._target_window:
+                subprocess.run(
+                    ['xdotool', 'windowactivate', '--sync', str(self._target_window)],
+                    check=True
+                )
+                time.sleep(0.05)
+
             subprocess.run(['xdotool', 'key', 'ctrl+shift+v'], check=True)
         except Exception as e:
             print(f"Type error: {e}")
