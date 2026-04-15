@@ -224,22 +224,19 @@ class ASREngine:
         if not text:
             return
         try:
-            from PySide6.QtWidgets import QApplication
-            clipboard = QApplication.clipboard()
-            clipboard.setText(text)
-
-            # 释放残留修饰符
-            subprocess.run(['xdotool', 'keyup', 'ctrl', 'shift'], check=False)
-
             # 切回录音前的目标窗口
             if self._target_window:
                 subprocess.run(
                     ['xdotool', 'windowactivate', '--sync', str(self._target_window)],
-                    check=True
+                    check=False
                 )
-                time.sleep(0.05)
+                time.sleep(0.1)
 
-            subprocess.run(['xdotool', 'key', 'ctrl+shift+v'], check=True)
+            # 释放残留修饰符
+            subprocess.run(['xdotool', 'keyup', 'ctrl', 'shift', 'alt'], check=False)
+
+            # 直接输入文本，绕过剪贴板和热键
+            subprocess.run(['xdotool', 'type', '--', text], check=True)
         except Exception as e:
             print(f"Type error: {e}")
 
