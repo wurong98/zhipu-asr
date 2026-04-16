@@ -5,4 +5,5 @@ build/
 dist/
 *.spec
 *.AppImage
+*.log
 package/
