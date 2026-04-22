@@ -60,12 +60,6 @@ class MainWindow(QMainWindow):
         prompt_layout.addWidget(self.prompt_input)
         layout.addLayout(prompt_layout)
 
-        # 启用 hotwords/prompt 复选框
-        self.enable_hotwords_cb = QCheckBox("启用 Hotwords")
-        self.enable_prompt_cb = QCheckBox("启用 Prompt")
-        layout.addWidget(self.enable_hotwords_cb)
-        layout.addWidget(self.enable_prompt_cb)
-
         # 保存按钮
         save_btn = QPushButton("保存设置")
         save_btn.clicked.connect(self._on_save)
@@ -117,7 +111,7 @@ class MainWindow(QMainWindow):
             api_key = self.api_key_input.text().strip()
 
             # 解析 hotwords
-            hotwords = None
+            hotwords = []
             hotwords_text = self.hotwords_input.text().strip()
             if hotwords_text:
                 try:
@@ -128,18 +122,12 @@ class MainWindow(QMainWindow):
                     return
 
             # 解析 prompt
-            prompt = None
-            if self.enable_prompt_cb.isChecked():
-                prompt = self.prompt_input.toPlainText().strip()
-
-            # 如果没有启用 hotwords，清空它
-            if not self.enable_hotwords_cb.isChecked():
-                hotwords = []
+            prompt = self.prompt_input.toPlainText().strip()
 
             settings = {
                 "api_key": api_key,
-                "hotwords": hotwords if hotwords is not None else [],
-                "prompt": prompt if prompt else "",
+                "hotwords": hotwords,
+                "prompt": prompt,
             }
 
             self.on_settings_change(settings)
