@@ -201,22 +201,95 @@ class ASREngine:
             self._is_recording = False
             self.set_state(ASRState.PROCESSING)
 
+    def _find_valid_input_device(self):
+        # On Linux, sounddevice often fails to see PulseAudio default devices
+        # because it tries to lock ALSA hw devices exclusively.
+        if sys.platform.startswith('linux'):
+            try:
+                # We'll use a special string to indicate 'arecord' fallback
+                # if the arecord command is available
+                subprocess.run(['which', 'arecord'], capture_output=True, check=True)
+                print("[Audio] Using system default via 'arecord' fallback for Linux", file=sys.__stdout__, flush=True)
+                return "arecord"
+            except Exception:
+                pass
+            
+        try:
+            # First try the default device
+            sd.check_input_settings(samplerate=SAMPLE_RATE, channels=CHANNELS, dtype=DTYPE)
+            print(f"[Audio] Using default input device", file=sys.__stdout__, flush=True)
+            return None # None means use default
+        except Exception:
+            pass
+        
+        # If default fails, search for a working input device
+        devices = sd.query_devices()
+        for i, device in enumerate(devices):
+            if device['max_input_channels'] > 0:
+                try:
+                    sd.check_input_settings(device=i, samplerate=SAMPLE_RATE, channels=CHANNELS, dtype=DTYPE)
+                    print(f"[Audio] Selected input device {i}: {device['name']}", file=sys.__stdout__, flush=True)
+                    print(f"        Info: {device}", file=sys.__stdout__, flush=True)
+                    return i
+                except Exception:
+                    continue
+        print("[Audio] Warning: No valid input device found for 16kHz, falling back to default", file=sys.__stdout__, flush=True)
+        return None
+
     def _recording_thread_target(self):
         self._recording_lock = threading.Lock()
-        stream = sd.InputStream(samplerate=SAMPLE_RATE, channels=CHANNELS, dtype=DTYPE)
-        with stream:
-            while self._is_recording and self._running:
-                # 检查录音时长
-                elapsed = time.time() - self._recording_start_time
-                if elapsed >= MAX_RECORDING_DURATION:
-                    print(f"[警告] 录音已达 {MAX_RECORDING_DURATION}s 上限，自动停止")
-                    self._is_recording = False
-                    self.set_state(ASRState.PROCESSING)
-                    break
+        
+        device_id = self._find_valid_input_device()
+        
+        if device_id == "arecord":
+            # Use arecord as a subprocess
+            cmd = [
+                'arecord',
+                '-f', 'S16_LE',
+                '-c', str(CHANNELS),
+                '-r', str(SAMPLE_RATE),
+                '-t', 'raw',
+                '-q'  # quiet mode
+            ]
+            process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+            try:
+                # 0.1 seconds * 16000 samples/sec * 2 bytes/sample (int16) * 1 channel
+                chunk_bytes = int(SAMPLE_RATE * 0.1 * 2 * CHANNELS)
+                while self._is_recording and self._running:
+                    elapsed = time.time() - self._recording_start_time
+                    if elapsed >= MAX_RECORDING_DURATION:
+                        print(f"[警告] 录音已达 {MAX_RECORDING_DURATION}s 上限，自动停止")
+                        self._is_recording = False
+                        self.set_state(ASRState.PROCESSING)
+                        break
 
-                frames, _ = stream.read(int(SAMPLE_RATE * 0.1))
-                with self._recording_lock:
-                    self._recording_frames.append(frames.copy())
+                    data = process.stdout.read(chunk_bytes)
+                    if not data:
+                        break
+                    
+                    # Convert to numpy array with the shape expected by sounddevice (frames, channels)
+                    frames = np.frombuffer(data, dtype=np.int16).reshape(-1, CHANNELS)
+                    with self._recording_lock:
+                        self._recording_frames.append(frames.copy())
+            finally:
+                process.terminate()
+                process.wait()
+        else:
+            stream = sd.InputStream(device=device_id, samplerate=SAMPLE_RATE, channels=CHANNELS, dtype=DTYPE)
+            
+            with stream:
+                while self._is_recording and self._running:
+                    # 检查录音时长
+                    elapsed = time.time() - self._recording_start_time
+                    if elapsed >= MAX_RECORDING_DURATION:
+                        print(f"[警告] 录音已达 {MAX_RECORDING_DURATION}s 上限，自动停止")
+                        self._is_recording = False
+                        self.set_state(ASRState.PROCESSING)
+                        break
+
+                    frames, _ = stream.read(int(SAMPLE_RATE * 0.1))
+                    with self._recording_lock:
+                        self._recording_frames.append(frames.copy())
 
     def _start_recording_thread(self):
         t = threading.Thread(target=self._recording_thread_target, daemon=True)
