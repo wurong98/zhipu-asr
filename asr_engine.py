@@ -202,59 +202,78 @@ class ASREngine:
             self.set_state(ASRState.PROCESSING)
 
     def _find_valid_input_device(self):
-        # On Linux, sounddevice often fails to see PulseAudio default devices
-        # because it tries to lock ALSA hw devices exclusively.
+        # Priority: PulseAudio/pactl > PipeWire/wpctl > arecord > sounddevice
+        # This ensures we use the system's configured default audio source
         if sys.platform.startswith('linux'):
-            try:
-                # We'll use a special string to indicate 'arecord' fallback
-                # if the arecord command is available
-                subprocess.run(['which', 'arecord'], capture_output=True, check=True)
-                print("[Audio] Using system default via 'arecord' fallback for Linux", file=sys.__stdout__, flush=True)
-                return "arecord"
-            except Exception:
-                pass
-            
+            # Try PulseAudio first (Ubuntu, common KDE setups)
+            if self._is_command_available('pactl'):
+                result = subprocess.run(
+                    ['pactl', 'get-default-source'],
+                    capture_output=True, text=True
+                )
+                if result.returncode == 0:
+                    device_name = result.stdout.strip()
+                    print(f"[Audio] PulseAudio default source: {device_name}", file=sys.__stdout__, flush=True)
+                    return ('pulse', device_name)
+
+            # Try PipeWire's wpctl (Arch KDE, modern setups)
+            if self._is_command_available('wpctl'):
+                result = subprocess.run(
+                    ['wpctl', 'get-default', '-t', 'source'],
+                    capture_output=True, text=True
+                )
+                if result.returncode == 0:
+                    device_name = result.stdout.strip()
+                    print(f"[Audio] PipeWire default source: {device_name}", file=sys.__stdout__, flush=True)
+                    return ('pipewire', device_name)
+
+            # Fallback to ALSA arecord
+            if self._is_command_available('arecord'):
+                print("[Audio] Using arecord fallback", file=sys.__stdout__, flush=True)
+                return ('alsa', 'default')
+
+        # Try sounddevice with default settings
         try:
-            # First try the default device
             sd.check_input_settings(samplerate=SAMPLE_RATE, channels=CHANNELS, dtype=DTYPE)
-            print(f"[Audio] Using default input device", file=sys.__stdout__, flush=True)
-            return None # None means use default
+            print(f"[Audio] Using sounddevice default", file=sys.__stdout__, flush=True)
+            return ('sounddevice', None)
         except Exception:
             pass
-        
-        # If default fails, search for a working input device
+
+        # Try sounddevice with enumerated devices
         devices = sd.query_devices()
         for i, device in enumerate(devices):
             if device['max_input_channels'] > 0:
                 try:
                     sd.check_input_settings(device=i, samplerate=SAMPLE_RATE, channels=CHANNELS, dtype=DTYPE)
-                    print(f"[Audio] Selected input device {i}: {device['name']}", file=sys.__stdout__, flush=True)
-                    print(f"        Info: {device}", file=sys.__stdout__, flush=True)
-                    return i
+                    print(f"[Audio] Selected sounddevice input {i}: {device['name']}", file=sys.__stdout__, flush=True)
+                    return ('sounddevice', i)
                 except Exception:
                     continue
-        print("[Audio] Warning: No valid input device found for 16kHz, falling back to default", file=sys.__stdout__, flush=True)
-        return None
+
+        print("[Audio] Warning: No valid input device found, using system default", file=sys.__stdout__, flush=True)
+        return ('sounddevice', None)
+
+    def _is_command_available(self, cmd: str) -> bool:
+        return subprocess.run(['which', cmd], capture_output=True).returncode == 0
 
     def _recording_thread_target(self):
         self._recording_lock = threading.Lock()
-        
-        device_id = self._find_valid_input_device()
-        
-        if device_id == "arecord":
-            # Use arecord as a subprocess
+
+        backend, device_info = self._find_valid_input_device()
+        chunk_bytes = int(SAMPLE_RATE * 0.1 * 2 * CHANNELS)
+
+        if backend == 'pulse':
+            # Use PulseAudio parec
             cmd = [
-                'arecord',
-                '-f', 'S16_LE',
-                '-c', str(CHANNELS),
-                '-r', str(SAMPLE_RATE),
-                '-t', 'raw',
-                '-q'  # quiet mode
+                'parec',
+                '--format', 's16le',
+                '--rate', str(SAMPLE_RATE),
+                '--channels', str(CHANNELS),
+                '-d', device_info
             ]
-            process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+            process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
             try:
-                # 0.1 seconds * 16000 samples/sec * 2 bytes/sample (int16) * 1 channel
-                chunk_bytes = int(SAMPLE_RATE * 0.1 * 2 * CHANNELS)
                 while self._is_recording and self._running:
                     elapsed = time.time() - self._recording_start_time
                     if elapsed >= MAX_RECORDING_DURATION:
@@ -262,31 +281,85 @@ class ASREngine:
                         self._is_recording = False
                         self.set_state(ASRState.PROCESSING)
                         break
-
                     data = process.stdout.read(chunk_bytes)
                     if not data:
                         break
-                    
-                    # Convert to numpy array with the shape expected by sounddevice (frames, channels)
                     frames = np.frombuffer(data, dtype=np.int16).reshape(-1, CHANNELS)
                     with self._recording_lock:
                         self._recording_frames.append(frames.copy())
             finally:
                 process.terminate()
                 process.wait()
-        else:
-            stream = sd.InputStream(device=device_id, samplerate=SAMPLE_RATE, channels=CHANNELS, dtype=DTYPE)
-            
-            with stream:
+
+        elif backend == 'pipewire':
+            # Use PipeWire/WirePlumber pw-cli or arecord with PulseAudio sink
+            # Try pactl first for recording (works with both PA and PW)
+            cmd = [
+                'parec',
+                '--format', 's16le',
+                '--rate', str(SAMPLE_RATE),
+                '--channels', str(CHANNELS)
+            ]
+            process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
+            try:
                 while self._is_recording and self._running:
-                    # 检查录音时长
                     elapsed = time.time() - self._recording_start_time
                     if elapsed >= MAX_RECORDING_DURATION:
                         print(f"[警告] 录音已达 {MAX_RECORDING_DURATION}s 上限，自动停止")
                         self._is_recording = False
                         self.set_state(ASRState.PROCESSING)
                         break
+                    data = process.stdout.read(chunk_bytes)
+                    if not data:
+                        break
+                    frames = np.frombuffer(data, dtype=np.int16).reshape(-1, CHANNELS)
+                    with self._recording_lock:
+                        self._recording_frames.append(frames.copy())
+            finally:
+                process.terminate()
+                process.wait()
 
+        elif backend == 'alsa':
+            # Use ALSA arecord
+            cmd = [
+                'arecord',
+                '-f', 'S16_LE',
+                '-c', str(CHANNELS),
+                '-r', str(SAMPLE_RATE),
+                '-D', device_info,
+                '-t', 'raw',
+                '-q'
+            ]
+            process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
+            try:
+                while self._is_recording and self._running:
+                    elapsed = time.time() - self._recording_start_time
+                    if elapsed >= MAX_RECORDING_DURATION:
+                        print(f"[警告] 录音已达 {MAX_RECORDING_DURATION}s 上限，自动停止")
+                        self._is_recording = False
+                        self.set_state(ASRState.PROCESSING)
+                        break
+                    data = process.stdout.read(chunk_bytes)
+                    if not data:
+                        break
+                    frames = np.frombuffer(data, dtype=np.int16).reshape(-1, CHANNELS)
+                    with self._recording_lock:
+                        self._recording_frames.append(frames.copy())
+            finally:
+                process.terminate()
+                process.wait()
+
+        else:
+            # sounddevice
+            stream = sd.InputStream(device=device_info, samplerate=SAMPLE_RATE, channels=CHANNELS, dtype=DTYPE)
+            with stream:
+                while self._is_recording and self._running:
+                    elapsed = time.time() - self._recording_start_time
+                    if elapsed >= MAX_RECORDING_DURATION:
+                        print(f"[警告] 录音已达 {MAX_RECORDING_DURATION}s 上限，自动停止")
+                        self._is_recording = False
+                        self.set_state(ASRState.PROCESSING)
+                        break
                     frames, _ = stream.read(int(SAMPLE_RATE * 0.1))
                     with self._recording_lock:
                         self._recording_frames.append(frames.copy())
